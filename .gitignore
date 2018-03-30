@@ -8,3 +8,9 @@ raw_data/12/
 *.png
 
 test.*
+
+*.pyc
+
+*.ipynb
+
+\.idea/
