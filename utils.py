@@ -8,3 +8,10 @@ def aug(mat, axis, value=1):
     mat = np.concatenate((mat, np.ones(shape)*value), axis=axis)
 
     return mat
+
+
+def reformArray(dataArray):
+
+    dataList = dataArray.tolist()
+
+    return np.array(dataList)
