@@ -18,3 +18,7 @@ test.*
 0409_camera_calibration/
 
 calib_example/
+
+0410/
+
+*.zip
