@@ -5,6 +5,7 @@ from numpy.linalg import inv
 import utils as ut
 from numpy import concatenate as concat
 import random
+from scipy.io import savemat
 
 
 def computeWorldPoints(refImagePoints, refWorldPoints, imagePoints):
@@ -56,97 +57,113 @@ def process(contours, restriction):
     return newContours
 
 
-def main(path, pic, refSize, criteria, refInds, refLazerInds):
+def main(path, pics, refSize, criteria, refInds, refLazerInds):
 
     # Set up constant parameters
-    sideLength = 0.02  # ==20mm
-    num = refSize[0] * refSize[1]
-    n, m = len(refInds), len(refInds[0])
-
-    # Read in imgs in gray
-    img = cv2.imread(path + pic)
-    grayImg = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    sideLength = 20  # ==20mm
+    num = len(pics)
 
     # Automatically prepare objpoints
     objp = np.ones((refSize[0] * refSize[1], 3), np.float32)*0
     objp[:, :2] = np.mgrid[0:refSize[0], 0:refSize[1]].T.reshape(-1, 2)*sideLength
-
-    # Try to find corners from the original picture
-    ret, rawCorners = cv2.findChessboardCorners(grayImg, refSize, None)
-    # shape = (actual_num_column-2, actual_num_row-2)
-    print(ret)
-    if not ret:
-        print('Failed')
-        return
-    # Refine the corner locations
-    refinedCorners = cv2.cornerSubPix(grayImg, rawCorners, (11, 11), (-1, -1), criteria)
-    leftmost = np.min(refinedCorners[:, 0, 0])
-    rightmost = np.max(refinedCorners[:, 0, 0])
-    topmost = np.min(refinedCorners[:, 0, 1])
-    bottommost = np.max(refinedCorners[:, 0, 1])
-
     objps = []
     imgps = []
-    objps.append(objp)
-    imgps.append(refinedCorners)
-    imgp = np.reshape(refinedCorners, (num, 2))
+    grayImgs = []
+    refinedCorners = []
+    Xcs = []
+
+    for pic in pics:
+        # Read in imgs in gray
+        img = cv2.imread(path + pic)
+        grayImg = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)  # (1944, 2592)
+
+        # Try to find corners from the original picture
+        ret, rawCorners = cv2.findChessboardCorners(grayImg, refSize, None)
+        # shape = (actual_num_column-2, actual_num_row-2)
+        print(ret)
+        if not ret:
+            print('Failed')
+            return
+        # Refine the corner locations
+        refinedCorner = cv2.cornerSubPix(grayImg, rawCorners, (11, 11), (-1, -1), criteria)
+
+        imgps.append(refinedCorner)
+        objps.append(objp)
+        grayImgs.append(grayImg)
+        refinedCorners.append(refinedCorner)
 
     # Compute parameters from the original picture
-    ret, inParam, distMat, rotVecs, tranVecs = cv2.calibrateCamera(objps, imgps, grayImg.shape[::-1], None, None)
-    rotVec = rotVecs[0]
-    tranVec = tranVecs[0]
-    rotMat, _ = cv2.Rodrigues(rotVec)
+    ret, inParam, distMat, rotVecs, tranVecs = cv2.calibrateCamera(objps, imgps, grayImgs[0].shape[::-1], None, None)
+    ExParams = []
 
-    h, w = grayImg.shape  # (1944, 2592)
-    _, thr = cv2.threshold(grayImg, 250, 255, cv2.THRESH_BINARY)
-    img2, contours, hierarchy = cv2.findContours(thr, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
-    contours = process(contours, (leftmost, rightmost, topmost, bottommost))
+    for k in range(num):
 
-    cv2.imwrite(path+'contours_'+pic, img2)
-    # cnt = cv2.drawContours(img2, contours, -1, (0, 0, 0), 1)
+        pic = pics[k]
+        rotVec = rotVecs[k]
+        tranVec = tranVecs[k]
+        rotMat, _ = cv2.Rodrigues(rotVec)
+        refInd = refInds[k]
+        refLazerInd = refLazerInds[k]
+        grayImg = grayImgs[k]
+        refinedCorner = refinedCorners[k]
+        ExParam = concat([rotMat, tranVec], axis=-1)  # shape=(3, 4)
+        ExParams.append(ExParam)
 
-    refImage = np.reshape(np.array(sorted(np.array(refinedCorners), key=lambda point: point[0, 0])),
-                          [6, 9, 2])
-    refImagePoints = np.array([[refImage[refInds[i][j][0], refInds[i][j][1]] for j in range(m)] for i in range(n)])
-    imagePoints = [
-        getExtremePoints(contours[refLazerInds[i][0]], refLazerInds[i][1]) for i in range(n)
-        # (2010, 1135),
+        n, m = len(refInd), len(refInd[0])
+        _, thr = cv2.threshold(grayImg, 250, 255, cv2.THRESH_BINARY)
+        img2, contours, hierarchy = cv2.findContours(thr, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+        leftmost = np.min(refinedCorner[:, 0, 0])
+        rightmost = np.max(refinedCorner[:, 0, 0])
+        topmost = np.min(refinedCorner[:, 0, 1])
+        bottommost = np.max(refinedCorner[:, 0, 1])
+        contours = process(contours, (leftmost, rightmost, topmost, bottommost))
 
-    ]
-    refWorldPoints = (20*np.array(refInds))
+        cv2.imwrite(path+'contours_'+pic, img2)
+        # cnt = cv2.drawContours(img2, contours, -1, (0, 0, 0), 1)
 
-    Xp = computeWorldPoints(refImagePoints, refWorldPoints, imagePoints)
-    print(Xp)
-    aug_Xp = ut.aug(ut.aug(Xp, -1, 0), -1, 1).T  # (4, 2)
-    RTmat = np.concatenate((rotMat, tranVec), axis=-1)  # (3, 4)
-    Xc = np.matmul(RTmat, aug_Xp)  # (3, 2)
+        refImage = np.reshape(np.array(sorted(np.array(refinedCorner),
+                                              key=lambda point: point[0, 0])), [6, 9, 2])
+        refImagePoints = np.array([[refImage[refInd[i][j][0], refInd[i][j][1]] for j in range(m)] for i in range(n)])
+        imagePoints = [getExtremePoints(contours[refLazerInd[i][0]], refLazerInd[i][1]) for i in range(n)]
+        # print(imagePoints)
+        refWorldPoints = (sideLength*np.array(refInd))
 
-    # x1 = np.array([0, 0, 0, 1])
-    # x2 = np.array([0, 20, 0, 1])
-    # print(np.matmul(RTmat, x1))
-    # print(np.matmul(RTmat, x2))
+        Xw = computeWorldPoints(refImagePoints, refWorldPoints, imagePoints)
+        testPoint = imagePoints[0]
+        # print(Xw)
+        aug_Xw = ut.aug(ut.aug(Xw, -1, 0), -1, 1).T  # (4, 2)
+        RTmat = np.concatenate((rotMat, tranVec), axis=-1)  # (3, 4)
+        Xc = np.matmul(RTmat, aug_Xw)  # (3, 2)
+        Xcs.append(Xc)
 
-    # Visualization
-    refImage = np.reshape(np.array(refinedCorners), [-1, 2]).tolist()
-    for point in refImage:
-        point = (int(point[0]), int(point[1]))
-        cv2.circle(img, point, 5, (255, 0, 0), -1)
-    for contour in contours:
-        for point in contour:
-            point = (int(point[0]), int(point[1]))
-            cv2.circle(img, tuple(point), 5, (0, 0, 255), -1)
-    for point in imagePoints:
-        point = (int(point[0]), int(point[1]))
-        cv2.circle(img, point, 5, (0, 255, 0), -1)
-    cv2.imwrite(path+'test.bmp', img)
+        # x1 = np.array([0, 0, 0, 1])
+        # x2 = np.array([0, 0.02, 0, 1])
+        # print(np.matmul(RTmat, x1))
+        # print(np.matmul(RTmat, x2))
 
-    return Xc
+        # # Visualization
+        # refImage = np.reshape(np.array(refinedCorners), [-1, 2]).tolist()
+        # for point in refImage:
+        #     point = (int(point[0]), int(point[1]))
+        #     cv2.circle(img, point, 5, (255, 0, 0), -1)
+        # for contour in contours:
+        #     for point in contour:
+        #         point = (int(point[0]), int(point[1]))
+        #         cv2.circle(img, tuple(point), 5, (0, 0, 255), -1)
+        # for point in imagePoints:
+        #     point = (int(point[0]), int(point[1]))
+        #     cv2.circle(img, point, 5, (0, 255, 0), -1)
+        # cv2.imwrite(path+'test.bmp', img)
+
+    Xc = np.concatenate(Xcs, axis=-1)
+
+    return Xc, inParam, ExParams, testPoint
 
 
 if __name__ == '__main__':
 
     path = 'G:\Code\\tiller-counting\\0410/'
-    pics = ['undistImage%i.bmp' %i for i in (2, 5, 6)]
+    pics = ['undistImage%i.bmp' %i for i in (2, 5)]
     Xcs = []
 
     refInds = [
@@ -167,34 +184,69 @@ if __name__ == '__main__':
          [[4, 6], [4, 7], [4, 8]],
          [[5, 7], [4, 7], [3, 7]],
          [[5, 8], [5, 7], [5, 6]]],
+
+        [[[0, 3], [0, 4], [0, 5]],
+         [[0, 4], [1, 4], [2, 4]],
+         [[1, 4], [1, 5], [1, 6]],
+         [[1, 5], [2, 5], [3, 5]],
+         [[2, 5], [2, 6], [2, 7]],
+         [[4, 6], [4, 7], [4, 8]],
+         [[5, 7], [4, 7], [3, 7]],
+         [[5, 8], [5, 7], [5, 6]]]
     ]
     refLazerInds = [
         [[0, 'L'], [1, 'R'], [2, 'U'], [2, 'R'], [3, 'U'], [3, 'R'], [4, 'U'], [4, 'R']],
+        [[0, 'L'], [0, 'B'], [1, 'L'], [1, 'B'], [2, 'L'], [3, 'R'], [4, 'U'], [7, 'R']],
         [[0, 'L'], [0, 'B'], [1, 'L'], [1, 'B'], [2, 'L'], [3, 'R'], [4, 'U'], [7, 'R']]
     ]
 
     criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
-    for i in range(0, 2):
-        print(pics[i])
-        Xc = main(path, pics[i], (9, 6), criteria, refInds[i], refLazerInds[i])
-        Xcs.append(Xc)
+    Xc, inParam, ExParams, testPoint = main(path, pics, (9, 6), criteria, refInds, refLazerInds)
 
-    Xc = np.concatenate(Xcs, axis=-1)
     num = Xc.shape[1]
     Pc = [np.reshape(Xc[:, i], (3, 1)) for i in range(num)]
-    print(Xc.shape)
-    for k in range(10):
+    minError = np.inf
+    bestParam = [0, 0, 0]
+    for i in range(30):
         samples = random.sample(range(num), num)
-        print(samples)
-        Pc_1, Pc_2, Pc_3 = (Pc[i] for i in samples[:3])
+        Pc_1, Pc_2, Pc_3 = (Pc[j] for j in samples[:3])
         Xc = np.concatenate((Pc_1, Pc_2, Pc_3), axis=-1)
+        params = np.matmul(np.ones((1, 3)), np.linalg.inv(Xc)).tolist()
+        a, b, c = params[0]
         error = 0
-        for l in samples[3:]:
-            test_Xc = Pc[l]
+        for j in samples[3:]:
+            test_Xc = Pc[j]
             test_x = test_Xc[0, 0]
             test_y = test_Xc[1, 0]
             test_z = test_Xc[2, 0]
-            params = np.matmul(np.ones((1, 3)), np.linalg.inv(Xc)).tolist()
-            a, b, c = params[0]
             error += abs((1-a*test_x-b*test_y)/c-test_z)
-        print(error/(len(samples)-3))
+        error /= (len(samples)-3)
+        if error < minError:
+            minError = error
+            bestParam = [a, b, c]
+    print(num)
+    print(minError)
+    print(bestParam)
+    mat = np.zeros((num, 3))
+
+    with open(path+'points.txt', 'w', encoding='utf8') as f:
+        for i in range(num):
+            test_Xc = Pc[i]
+            mat[i, 0] = test_Xc[0, 0]
+            mat[i, 1] = test_Xc[1, 0]
+            mat[i, 2] = test_Xc[2, 0]
+    savemat('points.mat', {'points': mat})
+    planeParam = np.reshape(np.array(bestParam), (1, 3))
+
+    projMats = []
+    reProjMats = []
+    # for i in range(len(ExParams)):
+    # for i in range(0, 1):
+    #     ExParam = ExParams[i]
+    #     projMat = np.matmul(np.concatenate((inParam, planeParam), axis=0),
+    #                   ExParam)
+    #     print(projMat)
+    #     projMats.append(projMat)
+    #     print(np.linalg.inv(projMat))
+    #     reProjMats.append(np.linalg.inv(projMat))
+    # print(np.matmul(projMats[-1], np.array([0, 20, 0, 1])))
