@@ -34,18 +34,30 @@ def analyze(path, img_file, show):
     return np.reshape(np.array(emb), [-1, 1])
 
 
-def update(x, w_in, y, lr, sign):
-    est = np.dot(w_in, x)
-    w_in = w_in+lr*(y-est)*x.T
+def sigmoid(x):
+
+    return 1/(1+np.exp(-x))
+
+
+def update(x, w_1, b_1, w_2, y, lr, sign):
+    est = np.dot(w_2, sigmoid(np.dot(w_1, x)+b_1))
+    temp = sigmoid(np.dot(w_1, x)+b_1)
+    error = y-est
+    w_2 = w_2 + lr*error*temp.T
+    w_1 = w_1 + lr*error*np.dot(w_2.T*(temp*(1-temp)), x.T)
+    b_1 = b_1+lr*error*(w_2.T*(temp*(1-temp)))
     loss = (y-est)**2
     if sign:
         print('[ training ] label: %i, pred: %f, loss: %f' % (y, est[0], loss))
-    return w_in
+        print(np.tanh(np.dot(w_1, x)+b_1))
+    return w_1, b_1, w_2
 
 
 def train(idx_list, n_epoch, lr, emb_list, label_list):
 
-    w_in = np.zeros([1, emb_list[0].shape[0]])
+    w_1 = np.zeros([3, emb_list[0].shape[0]])
+    b_1 = np.ones([3, 1])
+    w_2 = np.zeros([1, 3])
 
     for epoch in range(n_epoch):
         np.random.shuffle(idx_list)
@@ -54,16 +66,16 @@ def train(idx_list, n_epoch, lr, emb_list, label_list):
         else:
             sign = False
         for idx in idx_list:
-            w_in = update(emb_list[idx], w_in, label_list[idx], lr*(1.5-epoch/n_epoch), sign)
+            w_1, b_1, w_2 = update(emb_list[idx], w_1, b_1, w_2, label_list[idx], lr*(1.5-epoch/n_epoch), sign)
 
-    return w_in
+    return w_1, b_1, w_2
 
 
-def test(idx_list, w_in, emb_list, img_list, label_list):
+def test(idx_list, w_1, b_1, w_2, emb_list, img_list, label_list):
 
     test_loss = 0
     for idx in idx_list:
-        est = np.dot(w_in, emb_list[idx])
+        est = np.dot(w_2, np.dot(w_1, emb_list[idx])+b_1)
         test_loss += (est-label_list[idx])**2
         print('%s: estimated tiller number is %i [ %i ]' % (img_list[idx], int(est[0]+0.5), label_list[idx]))
     print('test_loss: %f' % (np.sqrt(test_loss/len(idx_list))))
@@ -73,7 +85,7 @@ def main():
 
     path = 'G:\Graduation_project\Camera\\2017_12_25/'
     n_epoch = 1000
-    seed = 7
+    seed = 17
     lr = 0.000005
 
     np.random.seed(seed)
@@ -90,8 +102,8 @@ def main():
         if idx not in test_list:
             train_list.append(idx)
 
-    w_in = train(train_list, n_epoch, lr, emb_list, label_list)
-    test(test_list, w_in, emb_list, img_list, label_list)
+    w_1, b_1, w_2 = train(train_list, n_epoch, lr, emb_list, label_list)
+    test(test_list, w_1, b_1, w_2, emb_list, img_list, label_list)
 
 
 if __name__ == '__main__':
