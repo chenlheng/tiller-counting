@@ -22,3 +22,5 @@ calib_example/
 0410/
 
 *.zip
+
+\.DS_Store
