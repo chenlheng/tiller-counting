@@ -10,22 +10,34 @@ class Model():
 
     def __init__(self, args):
 
+        np.random.seed(args.seed)
+        torch.manual_seed(args.seed)
+
         self.input_path = args.input_path
         self.lr = args.lr
         self.momentum = args.momentum
         self.n_epoch = args.n_epoch
-        self.seed = args.seed
+
         if args.act_fn == 'relu':
             self.act_fn = F.relu
-        else:
+        elif args.act_fn == 'sigmoid':
             self.act_fn = F.sigmoid
+        else:  # none
+            self.act_fn = lambda x: x
 
-        np.random.seed(self.seed)
-        torch.manual_seed(self.seed)
+        if args.net == 'cnn':
+            self.net = CNN_Net(self.act_fn)
+        else:  # feature
+            self.net = Feature_Net()
 
-        self.net = CNN_Net(self.act_fn)
         self.criterion = nn.MSELoss()
-        self.optim = torch.optim.Adagrad(self.net.parameters(), self.lr)
+        if args.optim == 'adagrad':
+            self.optim = torch.optim.Adagrad(self.net.parameters(), self.lr)
+        elif args.optim == 'adam':
+            self.optim = torch.optim.Adam(self.net.parameters(), self.lr)
+        else:  # sgd
+            self.optim = torch.optim.SGD(self.net.parameters(), self.lr, self.momentum)
+
         print(self.net)
 
     def run(self, train_files, test_files):
@@ -41,13 +53,8 @@ class Model():
 
                 img = cv2.imread(self.input_path+train_file)
                 label = [int(train_file.split('_')[0])]
-                height = img.shape[0]
-                weight = img.shape[1]
-                in_channels = img.shape[2]
-
-                x = torch.FloatTensor(img)
+                x = self.net.prepare(img)
                 z = torch.FloatTensor(label)
-                x = x.view(1, in_channels, height, weight)
                 z = z.view(1, 1)
 
                 self.optim.zero_grad()
@@ -58,21 +65,16 @@ class Model():
 
                 train_loss += loss.item()
 
-            print('[Train] Epoch %i/%i loss: %f' % ((epoch + 1), self.n_epoch, train_loss))
+            print('[Train] Epoch %i/%i loss: %f' % ((epoch + 1), self.n_epoch, train_loss/len(train_files)))
 
             with torch.no_grad():
 
                 for test_file in test_files:
 
-                    img = cv2.imread(self.input_path+test_file)
+                    img = cv2.imread(self.input_path + test_file)
                     label = [int(test_file.split('_')[0])]
-                    height = img.shape[0]
-                    weight = img.shape[1]
-                    in_channels = img.shape[2]
-
-                    x = torch.FloatTensor(img)
+                    x = self.net.prepare(img)
                     z = torch.FloatTensor(label)
-                    x = x.view(1, in_channels, height, weight)
                     z = z.view(1, 1)
 
                     y = self.net(x)
@@ -80,10 +82,50 @@ class Model():
 
                     test_loss += loss.item()
 
-                print('[Test] Epoch %i/%i loss: %f' % ((epoch + 1), self.n_epoch, test_loss))
+                print('[Test] Epoch %i/%i loss: %f' % ((epoch + 1), self.n_epoch, test_loss/len(test_files)))
                 print(y)
                 print(z)
                 print()
+
+
+class Feature_Net(nn.Module):
+
+    def __init__(self):
+
+        super(Feature_Net, self).__init__()
+
+        self.fc = nn.Linear(4, 1)
+
+    def forward(self, x):
+
+        x = self.fc(x)
+
+        return x
+
+    def prepare(self, img):
+
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        _, thr = cv2.threshold(img, 240, 255, cv2.THRESH_BINARY)
+
+        img2, contours, hierarchy = cv2.findContours(thr, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+
+        num = len(contours)
+        areaList = []
+        totalArea = 0
+        for i in range(num):
+            areaList.append(cv2.contourArea(contours[i]))
+            totalArea += areaList[-1]
+        meanArea = totalArea / num
+        areaList.sort()
+        middleArea = areaList[num // 2]
+        variance = np.var(areaList)
+
+        # emb: mean_Area, middle_Area, variance, bias
+        emb = [meanArea, middleArea, np.sqrt(variance), 1]
+        x = torch.FloatTensor(emb)
+        x = x.view(1, 4)
+
+        return x
 
 
 class CNN_Net(nn.Module):
@@ -113,5 +155,14 @@ class CNN_Net(nn.Module):
 
         return x
 
+    def prepare(self, img):
 
-class 
+        height = img.shape[0]
+        weight = img.shape[1]
+        in_channels = img.shape[2]
+
+        x = torch.FloatTensor(img)
+        x = x.view(1, in_channels, height, weight)
+
+        return x
+

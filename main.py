@@ -14,6 +14,8 @@ def parser_args():
     parser.add_argument('-input_path', type=str, default='/Users/lhchen/Downloads/raw_data/all/')
     parser.add_argument('-output_path', type=str, default='')
     parser.add_argument('-data_type', type=str, default='bmp')
+    parser.add_argument('-net', type=str, default='cnn')
+    parser.add_argument('-optim', type=str, default='adagrad')
 
     parser.add_argument('-lr', type=float, default=0.1)
     parser.add_argument('-momentum', type=float, default=0.9)
@@ -28,7 +30,9 @@ def parser_args():
     if args.output_path == '':
         args.output_path = args.input_path
     assert args.data_type in ['bmp', 'jpeg', 'jpg', 'png']
-    assert args.act_fn in ['relu', 'sigmoid']
+    assert args.act_fn in ['relu', 'sigmoid', 'none']
+    assert args.net in ['cnn', 'feature']
+    assert args.optim in ['adagrad', 'adam', 'sgd']
     assert os.path.isdir(args.input_path) and os.path.isdir(args.output_path)
 
     return args
