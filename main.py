@@ -21,7 +21,7 @@ def parser_args():
     parser.add_argument('-lr', type=float, default=0.1)
     parser.add_argument('-dr', type=float, default=0.5)
     parser.add_argument('-momentum', type=float, default=0.9)
-    parser.add_argument('-n_epoch', type=int, default=100)
+    parser.add_argument('-n_epoch', type=int, default=10)
     parser.add_argument('-batch_size', type=int, default=10)
     parser.add_argument('-thr', type=int, default=250)
     parser.add_argument('-act_fn', type=str, default='relu')
@@ -54,16 +54,9 @@ if __name__ == '__main__':
 
     model = Model(args, sprint, dprint)
 
-    raw_files = ut.read_files(args.input_path, args.data_type)
-    np.random.shuffle(raw_files)
-    n_file = len(raw_files)
-    train_files = raw_files[:int(args.train_portion*n_file)]
-    test_files = raw_files[int(args.train_portion*n_file):]
-    sprint('Training set: %i photos\nTest set: %i photos' % (len(train_files), len(test_files)))
-
     # for file in raw_files:
     #     img = cv2.imread(args.input_path+file)
     #     print(img.shape)
 
-    model.train(train_files, test_files)
+    model.train()
 

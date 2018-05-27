@@ -27,7 +27,8 @@ def read_files(path, data_type):
     raw_files = os.listdir(path)
     files = []
     for file in raw_files:
-        if file[-len(data_type):] == data_type:
+        if file[-len(data_type):] == data_type and not file[0] == '.':
+
             files.append(file)
 
     return files

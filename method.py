@@ -19,11 +19,26 @@ class Model():
         self.lr = args.lr
         self.dr = args.dr
         self.momentum = args.momentum
+        self.train_portion = args.train_portion
+        self.data_type = args.data_type
         self.n_epoch = args.n_epoch
+        self.batch_size = args.batch_size
         self.thr = args.thr
         self.gpu = args.gpu
         self.sprint = sprint
         self.dprint = dprint
+
+        files = ut.read_files(self.input_path, self.data_type)
+        np.random.shuffle(files)
+        self.input_path = self.input_path
+        self.n_file = len(files)
+        self.n_train = int(self.train_portion * self.n_file)
+        self.n_test = self.n_file - self.n_train
+        self.train_files = files[:self.n_train]
+        self.test_files = files[self.n_train:]
+        self.train_data = Data(args.input_path, self.train_files, args.batch_size)
+        self.test_data = Data(args.input_path, self.test_files, args.batch_size)
+        print('Training set: %i photos \nTest set: %i photos' % (self.n_train, self.n_test))
 
         if args.act_fn == 'relu':
             self.act_fn = F.relu
@@ -54,53 +69,32 @@ class Model():
 
         print(self.net)
 
-    def train(self, train_files, test_files):
+    def train(self):
 
-        for epoch in range(self.n_epoch):
+        self.run(self.train_data)
 
-            train_loss = 0
-            np.random.shuffle(train_files)
-            np.random.shuffle(test_files)
+    def test(self):
 
-            for i, train_file in enumerate(train_files):
+        self.run(self.test_data, train=False)
 
-                img = cv2.imread(self.input_path+train_file)
-                label = [int(train_file.split('-')[0])]
-                x_ = self.net.prepare(img)
-                z = torch.FloatTensor(label)
-                z_ = z.view(1, 1)
-                if self.gpu > -1:
-                    x = x_.cuda(self.gpu)
-                    z = z_.cuda(self.gpu)
-                else:
-                    x = x_
-                    z = z_
+    def run(self, data, train=True):
 
-                self.optim.zero_grad()
-                y = self.net(x)
-                loss = self.criterion(y, z)
-                loss.backward()
-                self.optim.step()
+        if train:
+            state = 'Train'
+            n_epoch = self.n_epoch
+        else:
+            state = 'Test'
+            n_epoch = 1
 
-                train_loss += loss.item()
+        for epoch in range(n_epoch):
 
-                self.dprint('[Train] file %i/%i loss: %f' % ((i+1), len(train_files), loss.item()))
+            epoch_loss = 0
+            data.init_data()
+            flag, no, x_, z_ = data.next_batch()
+            self.optim.zero_grad()
 
-            self.sprint('[Train] Epoch %i/%i loss: %f' % ((epoch + 1), self.n_epoch, train_loss/len(train_files)))
+            while flag:
 
-            self.test(test_files)
-
-    def test(self, test_files):
-
-        test_loss = 0
-
-        with torch.no_grad():
-            for i, test_file in enumerate(test_files):
-                img = cv2.imread(self.input_path + test_file)
-                label = [int(test_file.split('_')[0])]
-                x_ = self.net.prepare(img)
-                z = torch.FloatTensor(label)
-                z_ = z.view(1, 1)
                 if self.gpu > -1:
                     x = x_.cuda(self.gpu)
                     z = z_.cuda(self.gpu)
@@ -111,15 +105,24 @@ class Model():
                 y = self.net(x)
                 loss = self.criterion(y, z)
 
-                test_loss += loss.item()
+                if train:
+                    loss.backward()
+                    self.optim.step()
+                    self.optim.zero_grad()
 
-                self.dprint('[Train] file %i/%i loss: %f' % ((i + 1), len(test_files), loss.item()))
+                epoch_loss += loss.item()
+                self.dprint('[%s] file %i/%i loss: %f' % (state, (no+1), data.get_file_num(), loss.item()))
 
-            self.sprint('[Test] loss: %f' % (test_loss / len(test_files)))
-            print('Sample Output:')
-            print(y)
-            print(z)
-            print()
+                flag, no, x_, z_ = data.next_batch()
+
+            self.sprint('[%s] Epoch %i/%i loss: %f' % (state, (epoch + 1), n_epoch, epoch_loss/no))
+
+            if train:  # Test
+                self.test()
+            else:
+                print('Sample output:')
+                print(z)
+                print(y)
 
 
 class Feature_Net(nn.Module):
@@ -199,3 +202,54 @@ class CNN_Net(nn.Module):
 
         return x
 
+
+class Data():
+    
+    def __init__(self, input_path, files, batch_size):
+
+        self.input_path = input_path
+        self.files = files
+        self.n_file = len(self.files)
+        self.batch_size = batch_size
+        self.no = 0
+
+    def init_data(self):
+
+        np.random.shuffle(self.files)
+        self.no = 0
+
+    def get_file_num(self):
+
+        return self.n_file // self.batch_size * self.batch_size
+
+    def next_batch(self):
+
+        if self.no + self.batch_size >= self.n_file:
+            return False, None, None
+
+        data_batch = []
+        label_batch = []
+
+        for no in range(self.no, self.no + self.batch_size):
+
+            img = cv2.imread(self.input_path + self.files[no])
+            label = [int(self.files[no].split('-')[0])]
+
+            height = img.shape[0]  # 1942
+            width = img.shape[1]  # 2590
+            in_channels = img.shape[2]  # 3
+
+            x = torch.FloatTensor(img)
+            x = x.view(1, in_channels, height, width)
+            data_batch.append(x)
+
+            z = torch.FloatTensor(label)
+            z = z.view(1, 1)
+            label_batch.append(z)
+
+        self.no += self.batch_size
+
+        data_batch = torch.cat(data_batch, dim=0)
+        label_batch = torch.cat(label_batch, dim=0)
+
+        return True, self.no, data_batch, label_batch

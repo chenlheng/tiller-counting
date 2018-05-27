@@ -24,7 +24,7 @@ if __name__ == '__main__':
             print('unable to open the video')
     
         while rval:
-            cv2.imwrite(output_path+'%s_%i.jpg' % (file_name, f), frame)
+            cv2.imwrite(output_path+'%s-%i.jpg' % (file_name, f), frame)
             rval, frame = video.read()
             f = f + 1
     
@@ -32,3 +32,4 @@ if __name__ == '__main__':
         time_end = time.time()
         duration = int(time_end - time_start)
         print('%s -> %i frames in %is' % (file_name, f, duration))
+
