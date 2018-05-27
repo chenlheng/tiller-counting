@@ -6,6 +6,8 @@ import utils as ut
 import cv2
 
 
+# add batch
+
 class Model():
 
     def __init__(self, args):
@@ -15,8 +17,11 @@ class Model():
 
         self.input_path = args.input_path
         self.lr = args.lr
+        self.dr = args.dr
         self.momentum = args.momentum
         self.n_epoch = args.n_epoch
+        self.thr = args.thr
+        self.gpu = args.gpu
 
         if args.act_fn == 'relu':
             self.act_fn = F.relu
@@ -26,11 +31,18 @@ class Model():
             self.act_fn = lambda x: x
 
         if args.net == 'cnn':
-            self.net = CNN_Net(self.act_fn)
+            self.net_ = CNN_Net(self.act_fn, self.dr)
         else:  # feature
-            self.net = Feature_Net()
+            self.net_ = Feature_Net(self.thr)
+        self.criterion_ = nn.MSELoss()
 
-        self.criterion = nn.MSELoss()
+        if self.gpu > -1:
+            self.net = self.net_.cuda(self.gpu)
+            self.criterion = self.criterion_.cuda(self.gpu)
+        else:
+            self.net = self.net_
+            self.criterion = self.criterion_
+
         if args.optim == 'adagrad':
             self.optim = torch.optim.Adagrad(self.net.parameters(), self.lr)
         elif args.optim == 'adam':
@@ -40,12 +52,11 @@ class Model():
 
         print(self.net)
 
-    def run(self, train_files, test_files):
+    def train(self, train_files, test_files):
 
         for epoch in range(self.n_epoch):
 
             train_loss = 0
-            test_loss = 0
             np.random.shuffle(train_files)
             np.random.shuffle(test_files)
 
@@ -53,9 +64,15 @@ class Model():
 
                 img = cv2.imread(self.input_path+train_file)
                 label = [int(train_file.split('_')[0])]
-                x = self.net.prepare(img)
+                x_ = self.net.prepare(img)
                 z = torch.FloatTensor(label)
-                z = z.view(1, 1)
+                z_ = z.view(1, 1)
+                if self.gpu > -1:
+                    x = x_.cuda(self.gpu)
+                    z = z_.cuda(self.gpu)
+                else:
+                    x = x_
+                    z = z_
 
                 self.optim.zero_grad()
                 y = self.net(x)
@@ -67,34 +84,45 @@ class Model():
 
             print('[Train] Epoch %i/%i loss: %f' % ((epoch + 1), self.n_epoch, train_loss/len(train_files)))
 
-            with torch.no_grad():
+            self.test(test_files)
 
-                for test_file in test_files:
+    def test(self, test_files):
 
-                    img = cv2.imread(self.input_path + test_file)
-                    label = [int(test_file.split('_')[0])]
-                    x = self.net.prepare(img)
-                    z = torch.FloatTensor(label)
-                    z = z.view(1, 1)
+        test_loss = 0
 
-                    y = self.net(x)
-                    loss = self.criterion(y, z)
+        with torch.no_grad():
+            for test_file in test_files:
+                img = cv2.imread(self.input_path + test_file)
+                label = [int(test_file.split('_')[0])]
+                x_ = self.net.prepare(img)
+                z = torch.FloatTensor(label)
+                z_ = z.view(1, 1)
+                if self.gpu > -1:
+                    x = x_.cuda(self.gpu)
+                    z = z_.cuda(self.gpu)
+                else:
+                    x = x_
+                    z = z_
 
-                    test_loss += loss.item()
+                y = self.net(x)
+                loss = self.criterion(y, z)
 
-                print('[Test] Epoch %i/%i loss: %f' % ((epoch + 1), self.n_epoch, test_loss/len(test_files)))
-                print(y)
-                print(z)
-                print()
+                test_loss += loss.item()
+
+            print('[Test] loss: %f' % (test_loss / len(test_files)))
+            print(y)
+            print(z)
+            print()
 
 
 class Feature_Net(nn.Module):
 
-    def __init__(self):
+    def __init__(self, thr):
 
         super(Feature_Net, self).__init__()
 
         self.fc = nn.Linear(4, 1)
+        self.thr = thr
 
     def forward(self, x):
 
@@ -105,7 +133,7 @@ class Feature_Net(nn.Module):
     def prepare(self, img):
 
         img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        _, thr = cv2.threshold(img, 240, 255, cv2.THRESH_BINARY)
+        _, thr = cv2.threshold(img, self.thr, 255, cv2.THRESH_BINARY)
 
         img2, contours, hierarchy = cv2.findContours(thr, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
 
@@ -130,39 +158,37 @@ class Feature_Net(nn.Module):
 
 class CNN_Net(nn.Module):
 
-    def __init__(self, act_fn):
+    def __init__(self, act_fn, dr):
 
         super(CNN_Net, self).__init__()
         self.act_fn = act_fn
 
-        self.conv1 = nn.Conv2d(3, 6, 5)  # (636, 1596)
-        self.conv2 = nn.Conv2d(6, 16, 10)  # (150, 390)
-        self.pool1 = nn.MaxPool2d(4, 4)  # (159, 399)
-        self.pool2 = nn.MaxPool2d((5, 13), (5, 13))  # (30, 30)
-
-        self.fc1 = nn.Linear(16 * 30 * 30, 84)
-        self.fc2 = nn.Linear(84, 10)
-        self.fc3 = nn.Linear(10, 1)
+        self.conv1 = nn.Conv2d(3, 6, 5)  # (1938, 2586)
+        self.conv2 = nn.Conv2d(6, 16, 5)  # (864, 1289)
+        self.pool1 = nn.MaxPool2d(2, 2)  # (869, 1293)
+        self.pool2 = nn.MaxPool2d((864, 1289))
+        self.dropout = nn.Dropout2d(dr)
+        self.fc1 = nn.Linear(16, 1)
 
     def forward(self, x):
 
         x = self.pool1(self.act_fn(self.conv1(x)))
+        x = self.dropout(x)
         x = self.pool2(self.act_fn(self.conv2(x)))
-        x = x.view(-1, 16 * 30 * 30)
+        x = self.dropout(x)
+        x = x.view(-1, 16)
         x = self.act_fn(self.fc1(x))
-        x = self.act_fn(self.fc2(x))
-        x = self.act_fn(self.fc3(x))
 
         return x
 
     def prepare(self, img):
 
-        height = img.shape[0]
-        weight = img.shape[1]
-        in_channels = img.shape[2]
+        height = img.shape[0]  # 1942
+        width = img.shape[1]  # 2590
+        in_channels = img.shape[2]  # 3
 
         x = torch.FloatTensor(img)
-        x = x.view(1, in_channels, height, weight)
+        x = x.view(1, in_channels, height, width)
 
         return x
 

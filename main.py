@@ -4,6 +4,7 @@ import argparse
 import os
 import numpy as np
 import cv2
+import torch
 
 
 def parser_args():
@@ -18,11 +19,15 @@ def parser_args():
     parser.add_argument('-optim', type=str, default='adagrad')
 
     parser.add_argument('-lr', type=float, default=0.1)
+    parser.add_argument('-dr', type=float, default=0.5)
     parser.add_argument('-momentum', type=float, default=0.9)
     parser.add_argument('-n_epoch', type=int, default=100)
+    parser.add_argument('-batch_size', type=int, default=10)
+    parser.add_argument('-thr', type=int, default=250)
     parser.add_argument('-act_fn', type=str, default='relu')
 
     parser.add_argument('-seed', type=int, default=1)
+    parser.add_argument('-gpu', type=int, default=-1)
 
     args = parser.parse_args()
 
@@ -34,6 +39,8 @@ def parser_args():
     assert args.net in ['cnn', 'feature']
     assert args.optim in ['adagrad', 'adam', 'sgd']
     assert os.path.isdir(args.input_path) and os.path.isdir(args.output_path)
+    if args.gpu >= 0:
+        assert torch.cuda.device_count() > args.gpu
 
     return args
 
@@ -54,5 +61,5 @@ if __name__ == '__main__':
     #     img = cv2.imread(args.input_path+file)
     #     print(img.shape)
 
-    model.run(train_files, test_files)
+    model.train(train_files, test_files)
 
