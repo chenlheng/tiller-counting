@@ -1,6 +1,9 @@
 import numpy as np
 import os
 import cv2
+import time
+from functools import partial
+import sys
 
 
 def aug(mat, axis, value=1):
@@ -25,10 +28,38 @@ def read_files(path, data_type):
     files = []
     for file in raw_files:
         if file[-len(data_type):] == data_type:
-            img = cv2.imread(path+file, 0)
-            if img.shape[0] == 640 and img.shape[1] == 1600:
-                files.append(file)
+            files.append(file)
 
     return files
+
+
+def init_print():
+
+    start_time = time.time()
+    sprint = partial(static_print, start_time=start_time)
+    dprint = partial(dynamic_print, start_time=start_time)
+
+    return sprint, dprint
+
+
+def static_print(message, start_time):
+
+    if not type(message) == str:
+        message = str(message)
+
+    sys.stdout.write(' ' * 50 + '\r')
+    sys.stdout.flush()
+    print(message + '  [ %is ]' % (time.time() - start_time))
+
+
+def dynamic_print(message, start_time):
+
+    if not type(message) == str:
+        message = str(message)
+
+    sys.stdout.write(' ' * 50 + '\r')
+    sys.stdout.flush()
+    sys.stdout.write(message + '  [ %is ]' % (time.time() - start_time) + '\r')
+    sys.stdout.flush()
 
 

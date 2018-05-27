@@ -12,9 +12,9 @@ def parser_args():
     parser = argparse.ArgumentParser()
 
     # Parse args
-    parser.add_argument('-input_path', type=str, default='/Users/lhchen/Downloads/raw_data/all/')
+    parser.add_argument('-input_path', type=str, default='/home/lhchen/nas/tiller_counting/data/raw/')
     parser.add_argument('-output_path', type=str, default='')
-    parser.add_argument('-data_type', type=str, default='bmp')
+    parser.add_argument('-data_type', type=str, default='jpg')
     parser.add_argument('-net', type=str, default='cnn')
     parser.add_argument('-optim', type=str, default='adagrad')
 
@@ -26,6 +26,7 @@ def parser_args():
     parser.add_argument('-thr', type=int, default=250)
     parser.add_argument('-act_fn', type=str, default='relu')
 
+    parser.add_argument('-train_portion', type=float, default=0.8)
     parser.add_argument('-seed', type=int, default=1)
     parser.add_argument('-gpu', type=int, default=-1)
 
@@ -47,15 +48,18 @@ def parser_args():
 
 if __name__ == '__main__':
 
+    sprint, dprint = ut.init_print()
+
     args = parser_args()
 
-    model = Model(args)
+    model = Model(args, sprint, dprint)
 
     raw_files = ut.read_files(args.input_path, args.data_type)
     np.random.shuffle(raw_files)
     n_file = len(raw_files)
-    train_files = raw_files[:int(0.66*n_file)]
-    test_files = raw_files[int(0.66*n_file):]
+    train_files = raw_files[:int(args.train_portion*n_file)]
+    test_files = raw_files[int(args.train_portion*n_file):]
+    sprint('Training set: %i photos\nTest set: %i photos' % (len(train_files), len(test_files)))
 
     # for file in raw_files:
     #     img = cv2.imread(args.input_path+file)

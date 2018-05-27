@@ -10,7 +10,7 @@ import cv2
 
 class Model():
 
-    def __init__(self, args):
+    def __init__(self, args, sprint, dprint):
 
         np.random.seed(args.seed)
         torch.manual_seed(args.seed)
@@ -22,6 +22,8 @@ class Model():
         self.n_epoch = args.n_epoch
         self.thr = args.thr
         self.gpu = args.gpu
+        self.sprint = sprint
+        self.dprint = dprint
 
         if args.act_fn == 'relu':
             self.act_fn = F.relu
@@ -60,10 +62,10 @@ class Model():
             np.random.shuffle(train_files)
             np.random.shuffle(test_files)
 
-            for train_file in train_files:
+            for i, train_file in enumerate(train_files):
 
                 img = cv2.imread(self.input_path+train_file)
-                label = [int(train_file.split('_')[0])]
+                label = [int(train_file.split('-')[0])]
                 x_ = self.net.prepare(img)
                 z = torch.FloatTensor(label)
                 z_ = z.view(1, 1)
@@ -82,7 +84,9 @@ class Model():
 
                 train_loss += loss.item()
 
-            print('[Train] Epoch %i/%i loss: %f' % ((epoch + 1), self.n_epoch, train_loss/len(train_files)))
+                self.dprint('[Train] file %i/%i loss: %f' % ((i+1), len(train_files), loss.item()))
+
+            self.sprint('[Train] Epoch %i/%i loss: %f' % ((epoch + 1), self.n_epoch, train_loss/len(train_files)))
 
             self.test(test_files)
 
@@ -91,7 +95,7 @@ class Model():
         test_loss = 0
 
         with torch.no_grad():
-            for test_file in test_files:
+            for i, test_file in enumerate(test_files):
                 img = cv2.imread(self.input_path + test_file)
                 label = [int(test_file.split('_')[0])]
                 x_ = self.net.prepare(img)
@@ -109,7 +113,10 @@ class Model():
 
                 test_loss += loss.item()
 
-            print('[Test] loss: %f' % (test_loss / len(test_files)))
+                self.dprint('[Train] file %i/%i loss: %f' % ((i + 1), len(test_files), loss.item()))
+
+            self.sprint('[Test] loss: %f' % (test_loss / len(test_files)))
+            print('Sample Output:')
             print(y)
             print(z)
             print()
