@@ -4,13 +4,14 @@ import torch.nn.functional as F
 import numpy as np
 import utils as ut
 import cv2
+import os
 
 
-# add batch
+# add dropout and l2
 
 class Model():
 
-    def __init__(self, args, sprint, dprint):
+    def __init__(self, args):
 
         np.random.seed(args.seed)
         torch.manual_seed(args.seed)
@@ -25,8 +26,11 @@ class Model():
         self.batch_size = args.batch_size
         self.thr = args.thr
         self.gpu = args.gpu
-        self.sprint = sprint
-        self.dprint = dprint
+        self.net_type = args.net
+        self.output = Output(args.output_path, args.note)
+        self.sprint = self.output.sprint
+        self.dprint = self.output.dprint
+        self.best_loss = np.inf
 
         files = ut.read_files(self.input_path, self.data_type)
         np.random.shuffle(files)
@@ -36,9 +40,9 @@ class Model():
         self.n_test = self.n_file - self.n_train
         self.train_files = files[:self.n_train]
         self.test_files = files[self.n_train:]
-        self.train_data = Data(args.input_path, self.train_files, args.batch_size)
-        self.test_data = Data(args.input_path, self.test_files, args.batch_size)
-        print('Training set: %i photos \nTest set: %i photos' % (self.n_train, self.n_test))
+        self.train_data = Data(args.input_path, self.train_files, args.batch_size, args.thr)
+        self.test_data = Data(args.input_path, self.test_files, args.batch_size, args.thr)
+        print('Training set: %i photos\nTest set: %i photos' % (self.n_train, self.n_test))
 
         if args.act_fn == 'relu':
             self.act_fn = F.relu
@@ -47,7 +51,7 @@ class Model():
         else:  # none
             self.act_fn = lambda x: x
 
-        if args.net == 'cnn':
+        if self.net_type == 'cnn':
             self.net_ = CNN_Net(self.act_fn, self.dr)
         else:  # feature
             self.net_ = Feature_Net(self.thr)
@@ -82,15 +86,17 @@ class Model():
         if train:
             state = 'Train'
             n_epoch = self.n_epoch
+            # self.net.train(mode=True)
         else:
             state = 'Test'
             n_epoch = 1
+            # self.net.train(mode=False)
 
         for epoch in range(n_epoch):
 
             epoch_loss = 0
             data.init_data()
-            flag, no, x_, z_ = data.next_batch()
+            flag, no, x_, z_ = data.next_batch(self.net_type)
             self.optim.zero_grad()
 
             while flag:
@@ -102,7 +108,7 @@ class Model():
                     x = x_
                     z = z_
 
-                y = self.net(x)
+                y = self.net(x, train)
                 loss = self.criterion(y, z)
 
                 if train:
@@ -111,15 +117,19 @@ class Model():
                     self.optim.zero_grad()
 
                 epoch_loss += loss.item()
-                self.dprint('[%s] file %i/%i loss: %f' % (state, (no+1), data.get_file_num(), loss.item()))
+                message = '[%s] file %i/%i loss: %f' % (state, (no+1), data.get_file_num(), loss.item())
+                self.dprint(message)
+                self.output.write(message+'\n')
 
-                flag, no, x_, z_ = data.next_batch()
+                flag, no, x_, z_ = data.next_batch(self.net_type)
 
             self.sprint('[%s] Epoch %i/%i loss: %f' % (state, (epoch + 1), n_epoch, epoch_loss/no))
 
             if train:  # Test
                 self.test()
             else:
+                if self.best_loss > epoch_loss:
+                    self.output.save(self.net)
                 print('Sample output:')
                 print(z)
                 print(y)
@@ -134,34 +144,9 @@ class Feature_Net(nn.Module):
         self.fc = nn.Linear(4, 1)
         self.thr = thr
 
-    def forward(self, x):
+    def forward(self, x, _):
 
         x = self.fc(x)
-
-        return x
-
-    def prepare(self, img):
-
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        _, thr = cv2.threshold(img, self.thr, 255, cv2.THRESH_BINARY)
-
-        img2, contours, hierarchy = cv2.findContours(thr, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
-
-        num = len(contours)
-        areaList = []
-        totalArea = 0
-        for i in range(num):
-            areaList.append(cv2.contourArea(contours[i]))
-            totalArea += areaList[-1]
-        meanArea = totalArea / num
-        areaList.sort()
-        middleArea = areaList[num // 2]
-        variance = np.var(areaList)
-
-        # emb: mean_Area, middle_Area, variance, bias
-        emb = [meanArea, middleArea, np.sqrt(variance), 1]
-        x = torch.FloatTensor(emb)
-        x = x.view(1, 4)
 
         return x
 
@@ -177,40 +162,34 @@ class CNN_Net(nn.Module):
         self.conv2 = nn.Conv2d(6, 16, 5)  # (864, 1289)
         self.pool1 = nn.MaxPool2d(2, 2)  # (869, 1293)
         self.pool2 = nn.MaxPool2d((864, 1289))
+        self.bn1 = nn.BatchNorm2d(6)
+        self.bn2 = nn.BatchNorm2d(16)
         self.dropout = nn.Dropout2d(dr)
-        self.fc1 = nn.Linear(16, 1)
+        self.fc1 = nn.Linear(16, 48)
+        self.fc2 = nn.Linear(48, 1)
 
-    def forward(self, x):
+    def forward(self, x, flag):
 
-        x = self.pool1(self.act_fn(self.conv1(x)))
-        x = self.dropout(x)
-        x = self.pool2(self.act_fn(self.conv2(x)))
-        x = self.dropout(x)
+        x = self.pool1(self.act_fn(self.bn1(self.conv1(x))))
+        # x = self.dropout(x)
+        x = self.pool2(self.act_fn(self.bn2(self.conv2(x))))
+        # x = self.dropout(x)
         x = x.view(-1, 16)
         x = self.act_fn(self.fc1(x))
-
-        return x
-
-    def prepare(self, img):
-
-        height = img.shape[0]  # 1942
-        width = img.shape[1]  # 2590
-        in_channels = img.shape[2]  # 3
-
-        x = torch.FloatTensor(img)
-        x = x.view(1, in_channels, height, width)
+        x = self.act_fn(self.fc2(x))
 
         return x
 
 
 class Data():
     
-    def __init__(self, input_path, files, batch_size):
+    def __init__(self, input_path, files, batch_size, thr):
 
         self.input_path = input_path
         self.files = files
         self.n_file = len(self.files)
         self.batch_size = batch_size
+        self.thr = thr
         self.no = 0
 
     def init_data(self):
@@ -222,10 +201,10 @@ class Data():
 
         return self.n_file // self.batch_size * self.batch_size
 
-    def next_batch(self):
+    def next_batch(self, net):
 
         if self.no + self.batch_size >= self.n_file:
-            return False, None, None
+            return False, self.no, None, None
 
         data_batch = []
         label_batch = []
@@ -235,12 +214,10 @@ class Data():
             img = cv2.imread(self.input_path + self.files[no])
             label = [int(self.files[no].split('-')[0])]
 
-            height = img.shape[0]  # 1942
-            width = img.shape[1]  # 2590
-            in_channels = img.shape[2]  # 3
-
-            x = torch.FloatTensor(img)
-            x = x.view(1, in_channels, height, width)
+            if net == 'cnn':
+                x = self.prepare_cnn(img)
+            else:
+                x = self.prepare_feature(img, self.thr, self.files[no])
             data_batch.append(x)
 
             z = torch.FloatTensor(label)
@@ -253,3 +230,68 @@ class Data():
         label_batch = torch.cat(label_batch, dim=0)
 
         return True, self.no, data_batch, label_batch
+
+    def prepare_cnn(self, img):
+
+        height = img.shape[0]  # 1942
+        width = img.shape[1]  # 2590
+        in_channels = img.shape[2]  # 3
+
+        x = torch.FloatTensor(img)
+        x = x.view(1, in_channels, height, width)
+
+        return x
+
+    def prepare_feature(self, img, thr, file_name):
+
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        _, thr = cv2.threshold(img, thr, 255, cv2.THRESH_BINARY)
+
+        img2, contours, hierarchy = cv2.findContours(thr, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+
+        num = len(contours)
+        if num == 0:
+            x = torch.zeros(1, 4)
+            print('Warning: %s has no contours' % file_name)
+        else:
+            areaList = []
+            totalArea = 0
+            for i in range(num):
+                areaList.append(cv2.contourArea(contours[i]))
+                totalArea += areaList[-1]
+            meanArea = totalArea / num
+            areaList.sort()
+            middleArea = areaList[num // 2]
+            variance = np.var(areaList)
+
+            # emb: mean_Area, middle_Area, variance, bias
+            emb = [meanArea, middleArea, np.sqrt(variance), 1]
+            x = torch.FloatTensor(emb)
+            x = x.view(1, 4)
+
+        return x
+
+
+class Output():
+
+    def __init__(self, output_path, note):
+
+        self.sprint, self.dprint = ut.init_print()
+
+        folder = '%s/' % note
+        self.output_path = output_path+folder
+        self.output_file = self.output_path + 'results.txt'
+
+        if not os.path.exists(self.output_path):
+            os.mkdir(self.output_path)
+
+        self.f = open(self.output_file, 'a')
+
+    def write(self, message):
+
+        self.f.write(message)
+
+    def save(self, model):
+
+        torch.save(model, self.output_path+'model')
+

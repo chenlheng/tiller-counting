@@ -12,8 +12,8 @@ def parser_args():
     parser = argparse.ArgumentParser()
 
     # Parse args
-    parser.add_argument('-input_path', type=str, default='/home/lhchen/nas/tiller_counting/data/raw/')
-    parser.add_argument('-output_path', type=str, default='')
+    parser.add_argument('-input_path', type=str, default='/home/lhchen/nas/tiller_counting/data/0527/')
+    parser.add_argument('-output_path', type=str, default='/home/lhchen/nas/tiller_counting/data/res/')
     parser.add_argument('-data_type', type=str, default='jpg')
     parser.add_argument('-net', type=str, default='cnn')
     parser.add_argument('-optim', type=str, default='adagrad')
@@ -29,6 +29,7 @@ def parser_args():
     parser.add_argument('-train_portion', type=float, default=0.8)
     parser.add_argument('-seed', type=int, default=1)
     parser.add_argument('-gpu', type=int, default=-1)
+    parser.add_argument('-note', type=str, default='')
 
     args = parser.parse_args()
 
@@ -42,17 +43,17 @@ def parser_args():
     assert os.path.isdir(args.input_path) and os.path.isdir(args.output_path)
     if args.gpu >= 0:
         assert torch.cuda.device_count() > args.gpu
+    if args.note == '':
+        args.note = 'test'
 
     return args
 
 
 if __name__ == '__main__':
 
-    sprint, dprint = ut.init_print()
-
     args = parser_args()
 
-    model = Model(args, sprint, dprint)
+    model = Model(args)
 
     # for file in raw_files:
     #     img = cv2.imread(args.input_path+file)

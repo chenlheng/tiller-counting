@@ -3,8 +3,8 @@ import time
 import os
 
 
-input_path = '/home/lhchen/nas/MAISUI2/'
-output_path = '/home/lhchen/nas/tiller_counting/data/raw/'
+input_path = '/home/lhchen/nas/tiller_counting/data/raw_video/'
+output_path = '/home/lhchen/nas/tiller_counting/data/0527/'
 
 if __name__ == '__main__':
 
