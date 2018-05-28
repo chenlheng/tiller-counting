@@ -167,14 +167,14 @@ class CNN_Net(nn.Module):
         self.act_fn = act_fn
 
         # Add layers, change pools, remove fc's & add dropout
-        self.conv1 = nn.Conv2d(3, 6, 11)  # (1932, 2580)
-        self.conv2 = nn.Conv2d(6, 16, 11)  # (956, 1280)
-        self.pool1 = nn.MaxPool2d(2, 2)  # (966, 1290)
-        self.pool2 = nn.MaxPool2d((956, 1280), (956, 1280))
+        self.conv1 = nn.Conv2d(3, 6, (11, 21))  # (1932, 2570)
+        self.conv2 = nn.Conv2d(6, 16, (11, 21))  # (1922, 1265)
+        self.pool1 = nn.MaxPool2d((1, 2), (1, 2))  # (1932, 1285)
+        self.pool2 = nn.MaxPool2d((1, 1265), (1, 1265))  # (1922, 1)
         self.bn1 = nn.BatchNorm2d(6)
         self.bn2 = nn.BatchNorm2d(16)
         self.dropout = nn.Dropout2d(dr)
-        self.fc1 = nn.Linear(16, 48)
+        self.fc1 = nn.Linear(16*1922, 48)
         self.fc2 = nn.Linear(48, 1)
 
     def forward(self, x, flag):
@@ -183,7 +183,7 @@ class CNN_Net(nn.Module):
         x = self.dropout(x)
         x = self.pool2(self.act_fn(self.bn2(self.conv2(x))))
         x = self.dropout(x)
-        x = x.view(-1, 16)
+        x = x.view(-1, 16*1922)
         x = self.fc2(F.relu(self.fc1(x)))
 
         return x
