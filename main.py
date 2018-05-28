@@ -19,17 +19,19 @@ def parser_args():
     parser.add_argument('-optim', type=str, default='adagrad')
 
     parser.add_argument('-lr', type=float, default=0.1)
+    parser.add_argument('-l2', type=float, default=0.1)
     parser.add_argument('-dr', type=float, default=0.5)
     parser.add_argument('-momentum', type=float, default=0.9)
     parser.add_argument('-n_epoch', type=int, default=10)
     parser.add_argument('-batch_size', type=int, default=10)
-    parser.add_argument('-thr', type=int, default=250)
+    parser.add_argument('-thr', type=int, default=190)
     parser.add_argument('-act_fn', type=str, default='relu')
 
     parser.add_argument('-train_portion', type=float, default=0.8)
     parser.add_argument('-seed', type=int, default=1)
     parser.add_argument('-gpu', type=int, default=-1)
     parser.add_argument('-note', type=str, default='')
+    parser.add_argument('-mode', type=str, default='train')
 
     args = parser.parse_args()
 
@@ -45,6 +47,7 @@ def parser_args():
         assert torch.cuda.device_count() > args.gpu
     if args.note == '':
         args.note = 'test'
+    assert args.mode in ['train', 'resume', 'debug']
 
     return args
 
