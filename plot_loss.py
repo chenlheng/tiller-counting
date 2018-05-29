@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import argparse
 import os
 import numpy as np
+import csv
 
 
 def parser_args():
@@ -28,6 +29,12 @@ if __name__ == '__main__':
 
     args = parser_args()
     no = args.lower
+
+    with open(args.path + 'res.csv', 'w', newline='') as f:
+        pass
+    csv_file = open(args.path + 'res.csv', 'a', newline='')
+    csv_writer = csv.writer(csv_file, delimiter=',', quotechar='|', quoting=csv.QUOTE_MINIMAL)
+    csv_writer.writerow(['file', 'epoch', 'train_loss', 'test_loss'])
 
     while no <= args.upper:
 
@@ -55,12 +62,16 @@ if __name__ == '__main__':
             if not (n_epoch == len(train_loss) and n_epoch == len(test_loss)):
                 print('%i is not complete' % no)
             else:
+
+                for i in range(len(epochs)):
+                    csv_writer.writerow([no, epochs[i], train_loss[i], test_loss[i]])
+
                 epochs = np.array(epochs)
                 train_loss = np.array(train_loss)
                 test_loss = np.array(test_loss)
 
-                plt.plot(epochs, train_loss, color='g', label='train(%.2f)' % min(train_loss))
-                plt.plot(epochs, test_loss, color='r', label='test(%.2f)' % min(test_loss))
+                plt.plot(epochs, train_loss, color='g', label='%i-train(%.2f)' % (no, min(train_loss)))
+                plt.plot(epochs, test_loss, color='r', label='%i-test(%.2f)' % (no, min(test_loss)))
                 plt.axhline(min(test_loss))
                 plt.legend()
                 plt.savefig(args.path + '%i.png' % no)
