@@ -14,6 +14,8 @@ def parser_args():
     parser.add_argument('-path', type=str, default='/home/lhchen/nas/tiller_counting/data/res/')
     parser.add_argument('-upper', type=int, default=-1)
     parser.add_argument('-lower', type=int, default=-1)
+    parser.add_argument('-all', action='store_true', default=False)
+
 
     args = parser.parse_args()
 
@@ -63,5 +65,6 @@ if __name__ == '__main__':
                 plt.legend()
                 plt.savefig(args.path + '%i.png' % no)
 
-            plt.cla()
+            if not args.all:
+                plt.cla()
             no += 1
