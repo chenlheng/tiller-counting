@@ -21,6 +21,7 @@ def parser_args():
     parser.add_argument('-lr', type=float, default=0.1)
     parser.add_argument('-l2', type=float, default=0.1)
     parser.add_argument('-dr', type=float, default=0.5)
+    parser.add_argument('-x', type=float, default=0.0)
     parser.add_argument('-momentum', type=float, default=0.9)
     parser.add_argument('-n_epoch', type=int, default=10)
     parser.add_argument('-batch_size', type=int, default=10)

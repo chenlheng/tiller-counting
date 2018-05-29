@@ -68,12 +68,13 @@ class Model:
             self.criterion = self.criterion_
 
         if args.optim == 'adagrad':
-            self.optim = torch.optim.Adagrad(self.net.parameters(), lr=self.lr, weight_decay=self.l2)
+            self.optim = torch.optim.Adagrad(self.net.parameters(), lr=self.lr, weight_decay=self.l2,
+                                             initial_accumulator_value=args.x)
         elif args.optim == 'adam':
             self.optim = torch.optim.Adam(self.net.parameters(), lr=self.lr, weight_decay=self.l2)
         else:  # sgd
-            self.optim = torch.optim.SGD(self.net.parameters(), lr=self.lr,
-                                         momentum=self.momentum, weight_decay=self.l2)
+            self.optim = torch.optim.SGD(self.net.parameters(), lr=self.lr, weight_decay=self.l2,
+                                         momentum=self.momentum)
 
         print(self.net)
 
